@@ -1,0 +1,48 @@
+[
+  {
+    "odcName": "ODC-MNZ-FA",
+    "distribution": "1",
+    "route": {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [111.466, -7.866],
+          [111.468, -7.868],
+          [111.470, -7.870],
+          [111.472, -7.872],
+          [111.475, -7.875],
+          [111.478, -7.878],
+          [111.480, -7.880]
+        ]
+      },
+      "properties": {}
+    },
+    "splicePoints": [
+      { "id": 101, "name": "Handhole 01", "lat": "-7.868", "long": "111.468", "distance": 300 },
+      { "id": 102, "name": "Handhole 02", "lat": "-7.872", "long": "111.472", "distance": 850 },
+      { "id": 103, "name": "ODP-MNZ-FA/01", "lat": "-7.878", "long": "111.478", "distance": 1600 }
+    ]
+  },
+  {
+    "odcName": "ODC-PGO-FAA",
+    "distribution": "2",
+    "route": {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [111.382838, -7.864234],
+          [111.385, -7.866],
+          [111.388, -7.868],
+          [111.390, -7.870]
+        ]
+      },
+      "properties": {}
+    },
+    "splicePoints": [
+      { "id": 201, "name": "HH-PGO-01", "lat": "-7.866", "long": "111.385", "distance": 450 },
+      { "id": 202, "name": "HH-PGO-02", "lat": "-7.868", "long": "111.388", "distance": 900 }
+    ]
+  }
+]

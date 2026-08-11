@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "CableRoute": {
+      "title": "Cable Route",
+      "description": "Stores GeoJSON line string for cable routes and associated metadata.",
+      "type": "object",
+      "properties": {
+        "odcName": { "type": "string", "description": "Name of the ODC" },
+        "distribution": { "type": "string", "description": "Distribution number" },
+        "cableType": { "type": "string", "description": "Type of cable (FEEDER, BACKBONE, etc.)" },
+        "siteAsal": { "type": "string", "description": "Origin site" },
+        "stoName": { "type": "string", "description": "STO name for Feeder/Distribution" },
+        "stoStart": { "type": "string", "description": "Start STO for Backbone" },
+        "stoEnd": { "type": "string", "description": "End STO for Backbone" },
+        "route": { "type": "string", "description": "GeoJSON Feature (LineString) stringified" },
+        "splicePoints": { 
+          "type": "array", 
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "number" },
+              "name": { "type": "string" },
+              "lat": { "type": "string" },
+              "long": { "type": "string" },
+              "distance": { "type": "number" }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "authorUid": { "type": "string" }
+      },
+      "required": ["odcName", "distribution", "route", "splicePoints"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user roles and permissions.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "technician"] },
+        "displayName": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "GamasRecord": {
+      "title": "Gamas Record",
+      "description": "Stores mass outage (Gamas) monitoring records.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "segment": { "type": "string", "enum": ["DISTRIBUSI", "FEEDER", "ODP", "TIANG", "Lainya"] },
+        "alproName": { "type": "string" },
+        "sto": { "type": "string" },
+        "jenisGamas": { "type": "string" },
+        "titikPerbaikan": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lat": { "type": "string" },
+              "long": { "type": "string" }
+            }
+          }
+        },
+        "kmlData": { "type": "string", "description": "GeoJSON string" },
+        "status": { "type": "string", "enum": ["Open", "On Progress", "Closed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "authorUid": { "type": "string" }
+      },
+      "required": ["segment", "alproName", "sto", "jenisGamas", "titikPerbaikan"]
+    }
+  },
+  "firestore": {
+    "/cable_routes/{routeId}": {
+      "schema": "CableRoute",
+      "description": "Collection of cable routes"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile data"
+    },
+    "/gamas_records/{recordId}": {
+      "schema": "GamasRecord",
+      "description": "Collection of Gamas records"
+    }
+  }
+}

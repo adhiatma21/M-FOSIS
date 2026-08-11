@@ -1,0 +1,10 @@
+{
+  "name": "M-FOSIS | Fiber Optic Insight",
+  "description": "Management Fiber Optic Smart Insight System for estimating cable breaks and network analysis.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
