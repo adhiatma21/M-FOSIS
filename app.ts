@@ -419,6 +419,102 @@ function isValueMatchingOdp(kmlText: string, query: string): boolean {
   return false;
 }
 
+// Helper function to find the main shared M-FOSIS Google Drive folder across all users
+async function findMFosisFolder(accessToken: string): Promise<{ id: string; name: string } | null> {
+  const knownRootId = '1AkJdPSJRWY6_xzWcQZM2cEsG-AT_2Jg_';
+  // 1. Try known shared folder ID directly
+  try {
+    const checkRes = await fetch(`https://www.googleapis.com/drive/v3/files/${knownRootId}?fields=id,name,trashed`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (checkRes.ok) {
+      const data: any = await checkRes.json();
+      if (data && data.id && !data.trashed) {
+        console.log(`[Google Drive Search] Menemukan folder utama M-Fosis via ID terbagi: ${data.id}`);
+        return { id: data.id, name: data.name || 'M-Fosis' };
+      }
+    }
+  } catch (e) {
+    console.warn("[Google Drive Search] Gagal memeriksa ID folder terbagi M-Fosis:", e);
+  }
+
+  // 2. Search globally (searches both 'My Drive' and 'Shared with me')
+  try {
+    const globalQuery = `(name = 'M-Fosis' or name = 'M-FOSIS' or name = 'm-fosis') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const globalRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(globalQuery)}&fields=files(id,name)`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (globalRes.ok) {
+      const globalData: any = await globalRes.json();
+      if (globalData.files && globalData.files.length > 0) {
+        console.log(`[Google Drive Search] Menemukan folder M-Fosis via pencarian global: ID ${globalData.files[0].id}`);
+        return globalData.files[0];
+      }
+    }
+  } catch (e) {
+    console.warn("[Google Drive Search] Gagal pencarian global M-Fosis:", e);
+  }
+
+  // 3. Fallback to searching in root
+  try {
+    const rootQuery = `'root' in parents and (name = 'M-Fosis' or name = 'M-FOSIS' or name = 'm-fosis') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const rootRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(rootQuery)}&fields=files(id,name)`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (rootRes.ok) {
+      const rootData: any = await rootRes.json();
+      if (rootData.files && rootData.files.length > 0) {
+        console.log(`[Google Drive Search] Menemukan folder M-Fosis di root: ID ${rootData.files[0].id}`);
+        return rootData.files[0];
+      }
+    }
+  } catch (e) {
+    console.warn("[Google Drive Search] Gagal pencarian root M-Fosis:", e);
+  }
+
+  return null;
+}
+
+// Helper function to find the BAHAN REKON subfolder
+async function findBahanRekonFolder(accessToken: string, mFosisFolderId: string | null): Promise<{ id: string; name: string } | null> {
+  if (mFosisFolderId) {
+    try {
+      const bRekonQuery = `'${mFosisFolderId}' in parents and (name = 'BAHAN REKON' or name = 'Bahan Rekon' or name = 'bahan rekon') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+      const bRekonRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(bRekonQuery)}&fields=files(id,name)`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      if (bRekonRes.ok) {
+        const bRekonData: any = await bRekonRes.json();
+        if (bRekonData.files && bRekonData.files.length > 0) {
+          console.log(`[Google Drive Search] Menemukan folder BAHAN REKON di dalam M-Fosis: ID ${bRekonData.files[0].id}`);
+          return bRekonData.files[0];
+        }
+      }
+    } catch (e) {
+      console.warn("[Google Drive Search] Gagal kueri BAHAN REKON di M-Fosis:", e);
+    }
+  }
+
+  // Fallback: Global search for BAHAN REKON
+  try {
+    const globalBRekonQuery = `(name = 'BAHAN REKON' or name = 'Bahan Rekon' or name = 'bahan rekon') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const globalRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(globalBRekonQuery)}&fields=files(id,name)`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (globalRes.ok) {
+      const globalData: any = await globalRes.json();
+      if (globalData.files && globalData.files.length > 0) {
+        console.log(`[Google Drive Search] Menemukan folder BAHAN REKON via kueri global: ID ${globalData.files[0].id}`);
+        return globalData.files[0];
+      }
+    }
+  } catch (e) {
+    console.warn("[Google Drive Search] Gagal kueri global BAHAN REKON:", e);
+  }
+
+  return null;
+}
+
 // API Route for hierarchical, safe KML file search on Google Drive
 app.post("/api/drive/search-kml", async (req: express.Request, res: express.Response) => {
   try {
@@ -443,46 +539,20 @@ app.post("/api/drive/search-kml", async (req: express.Request, res: express.Resp
 
     if (isSurge) {
       console.log(`[Google Drive Search - SURGE] Menjalankan pipeline khusus segmen SURGE...`);
-      let mFosisFolderId = null;
-      const rootQuery = `'root' in parents and (name = 'M-Fosis' or name = 'M-FOSIS' or name = 'm-fosis') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-      const rootRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(rootQuery)}&fields=files(id,name)`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-      
-      if (rootRes.ok) {
-        const rootData = await rootRes.json();
-        if (rootData.files && rootData.files[0]) {
-          mFosisFolderId = rootData.files[0].id;
-        }
-      }
-      
-      if (!mFosisFolderId) {
-        const globalQuery = `(name = 'M-Fosis' or name = 'M-FOSIS' or name = 'm-fosis') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-        const globalRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(globalQuery)}&fields=files(id,name)`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        if (globalRes.ok) {
-          const globalData = await globalRes.json();
-          if (globalData.files && globalData.files[0]) {
-            mFosisFolderId = globalData.files[0].id;
-          }
-        }
-      }
-      
-      if (!mFosisFolderId) {
-        return res.status(404).json({ error: "Folderstruktur utama M-Fosis tidak ditemukan di Google Drive Anda." });
-      }
+      const mFosisFolder = await findMFosisFolder(accessToken);
+      let mFosisFolderId = mFosisFolder ? mFosisFolder.id : null;
 
       let surgeFolderId = null;
-      const surgeQuery = `'${mFosisFolderId}' in parents and (name = 'SURGE' or name = 'Surge' or name = 'surge') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-      const surgeRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(surgeQuery)}&fields=files(id,name)`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-      
-      if (surgeRes.ok) {
-        const surgeData = await surgeRes.json();
-        if (surgeData.files && surgeData.files[0]) {
-          surgeFolderId = surgeData.files[0].id;
+      if (mFosisFolderId) {
+        const surgeQuery = `'${mFosisFolderId}' in parents and (name = 'SURGE' or name = 'Surge' or name = 'surge') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+        const surgeRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(surgeQuery)}&fields=files(id,name)`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (surgeRes.ok) {
+          const surgeData: any = await surgeRes.json();
+          if (surgeData.files && surgeData.files[0]) {
+            surgeFolderId = surgeData.files[0].id;
+          }
         }
       }
       
@@ -551,40 +621,8 @@ app.post("/api/drive/search-kml", async (req: express.Request, res: express.Resp
 
     } else if (isDistribusi) {
       console.log(`[Google Drive Search - Distribusi] Menjalankan pipeline khusus segmen DISTRIBUSI...`);
-      let mFosisFolderId = null;
-      
-      const rootQuery = `'root' in parents and (name = 'M-Fosis' or name = 'M-FOSIS' or name = 'm-fosis') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-      const rootRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(rootQuery)}&fields=files(id,name)`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-      
-      if (rootRes.ok) {
-        const rootData = await rootRes.json();
-        if (rootData.files && rootData.files[0]) {
-          mFosisFolderId = rootData.files[0].id;
-          console.log(`[Google Drive Search - Distribusi] Menemukan folder M-Fosis di root: ID ${mFosisFolderId}`);
-        }
-      }
-      
-      if (!mFosisFolderId) {
-        console.log(`[Google Drive Search - Distribusi] M-Fosis tidak ditemukan di root. Mencari secara global...`);
-        const globalQuery = `(name = 'M-Fosis' or name = 'M-FOSIS' or name = 'm-fosis') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-        const globalRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(globalQuery)}&fields=files(id,name)`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        if (globalRes.ok) {
-          const globalData = await globalRes.json();
-          if (globalData.files && globalData.files[0]) {
-            mFosisFolderId = globalData.files[0].id;
-            console.log(`[Google Drive Search - Distribusi] Menemukan folder M-Fosis secara global: ID ${mFosisFolderId}`);
-          }
-        }
-      }
-      
-      if (!mFosisFolderId) {
-        console.error(`[Google Drive Search - Distribusi Error] Folder M-Fosis tidak ditemukan.`);
-        return res.status(404).json({ error: "Folderstruktur utama M-Fosis tidak ditemukan di Google Drive Anda." });
-      }
+      const mFosisFolder = await findMFosisFolder(accessToken);
+      let mFosisFolderId = mFosisFolder ? mFosisFolder.id : null;
       
       console.log(`[Google Drive Search - Distribusi] Mencari folder "DISTRIBUSI" di dalam M-Fosis...`);
       let distribusiFolderId = null;
@@ -795,69 +833,25 @@ app.post("/api/drive/search-kml", async (req: express.Request, res: express.Resp
       return res.json({ files: finalMatchedFiles });
       
     } else {
-      console.log(`[Google Drive Search] Langkah 1: Mencari folder utama "M-Fosis" di root...`);
-      const rootQuery = `'root' in parents and (name = 'M-Fosis' or name = 'M-FOSIS') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-      const rootRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(rootQuery)}&fields=files(id,name)`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
+      console.log(`[Google Drive Search] Langkah 1: Mencari folder utama "M-Fosis"...`);
+      const mFosisFolder = await findMFosisFolder(accessToken);
+      const bRekonFolder = await findBahanRekonFolder(accessToken, mFosisFolder ? mFosisFolder.id : null);
 
-      if (!rootRes.ok) {
-        const errText = await rootRes.text().catch(() => "");
-        console.error(`[Google Drive Search Error] Gagal mencari M-Fosis di root: ${rootRes.status}. Response: ${errText}`);
-        if (rootRes.status === 401 || rootRes.status === 403) {
+      let subFolders: any[] = [];
+      if (bRekonFolder && bRekonFolder.id) {
+        console.log(`[Google Drive Search] Langkah 3: Mencari sub-folder di dalam BAHAN REKON (${bRekonFolder.name})...`);
+        const level3Query = `'${bRekonFolder.id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+        const level3Res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(level3Query)}&fields=files(id,name)&pageSize=1000`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        if (level3Res.ok) {
+          const level3Data: any = await level3Res.json();
+          subFolders = level3Data.files || [];
+        } else if (level3Res.status === 401 || level3Res.status === 403) {
           return res.status(401).json({ error: "TOKEN_EXPIRED", message: "Google Drive token telah kedaluwarsa atau tidak valid." });
         }
-        return res.status(rootRes.status).json({ error: "Folder Struktur tidak ditemukan" });
       }
-
-      const rootData: any = await rootRes.json();
-      const mFosisFolder = rootData.files && rootData.files[0];
-
-      if (!mFosisFolder || !mFosisFolder.id) {
-        console.error("[Google Drive Search Error] Folder Struktur tidak ditemukan: Folder M-Fosis tidak ditemukan.");
-        return res.status(404).json({ error: "Folder Struktur tidak ditemukan" });
-      }
-
-      console.log(`[Google Drive Search] Langkah 2: Mencari sub-folder "BAHAN REKON" di dalam M-Fosis...`);
-      const bRekonQuery = `'${mFosisFolder.id}' in parents and (name = 'BAHAN REKON' or name = 'Bahan Rekon') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-      const bRekonRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(bRekonQuery)}&fields=files(id,name)`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-
-      if (!bRekonRes.ok) {
-        const errText = await bRekonRes.text().catch(() => "");
-        console.error(`[Google Drive Search Error] Gagal mencari BAHAN REKON di M-Fosis: ${bRekonRes.status}. Response: ${errText}`);
-        if (bRekonRes.status === 401 || bRekonRes.status === 403) {
-          return res.status(401).json({ error: "TOKEN_EXPIRED", message: "Google Drive token telah kedaluwarsa atau tidak valid." });
-        }
-        return res.status(bRekonRes.status).json({ error: "Folder Struktur tidak ditemukan" });
-      }
-
-      const bRekonData: any = await bRekonRes.json();
-      const bRekonFolder = bRekonData.files && bRekonData.files[0];
-
-      if (!bRekonFolder || !bRekonFolder.id) {
-        console.error("[Google Drive Search Error] Folder Struktur tidak ditemukan: Folder BAHAN REKON tidak ditemukan.");
-        return res.status(404).json({ error: "Folder Struktur tidak ditemukan" });
-      }
-
-      console.log(`[Google Drive Search] Langkah 3: Mencari sub-folder yang cocok dengan ID Alpro/Tiket di dalam BAHAN REKON...`);
-      const level3Query = `'${bRekonFolder.id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-      const level3Res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(level3Query)}&fields=files(id,name)&pageSize=1000`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-
-      if (!level3Res.ok) {
-        const errText = await level3Res.text().catch(() => "");
-        console.error(`[Google Drive Search Error] Gagal mendaftar sub-folder BAHAN REKON: ${level3Res.status}. Response: ${errText}`);
-        if (level3Res.status === 401 || level3Res.status === 403) {
-          return res.status(401).json({ error: "TOKEN_EXPIRED", message: "Google Drive token telah kedaluwarsa atau tidak valid." });
-        }
-        return res.status(level3Res.status).json({ error: "Folder Struktur tidak ditemukan" });
-      }
-
-      const level3Data: any = await level3Res.json();
-      const subFolders: any[] = level3Data.files || [];
 
       const queryName = (searchName || "").toString().trim().toUpperCase();
       const querySto = (sto || "").toString().trim().toUpperCase();
@@ -1021,58 +1015,23 @@ app.post("/api/drive/fetch-photos", async (req: express.Request, res: express.Re
 
     console.log(`[Google Drive Fetch Photos] Memulai pencarian foto bukti fisik di Google Drive...`);
 
-    const rootQuery = `'root' in parents and (name = 'M-Fosis' or name = 'M-FOSIS') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-    const rootRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(rootQuery)}&fields=files(id,name)`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
+    const mFosisFolder = await findMFosisFolder(accessToken);
+    const bRekonFolder = await findBahanRekonFolder(accessToken, mFosisFolder ? mFosisFolder.id : null);
 
-    if (!rootRes.ok) {
-      if (rootRes.status === 401 || rootRes.status === 403) {
+    let subFolders: any[] = [];
+    if (bRekonFolder && bRekonFolder.id) {
+      const level3Query = `'${bRekonFolder.id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+      const level3Res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(level3Query)}&fields=files(id,name)&pageSize=1000`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+
+      if (level3Res.ok) {
+        const level3Data: any = await level3Res.json();
+        subFolders = level3Data.files || [];
+      } else if (level3Res.status === 401 || level3Res.status === 403) {
         return res.status(401).json({ error: "TOKEN_EXPIRED", message: "Google Drive token telah kedaluwarsa atau tidak valid." });
       }
-      return res.status(rootRes.status).json({ error: "Folder M-Fosis tidak ditemukan" });
     }
-
-    const rootData: any = await rootRes.json();
-    const mFosisFolder = rootData.files && rootData.files[0];
-
-    if (!mFosisFolder || !mFosisFolder.id) {
-      return res.status(404).json({ error: "Folder M-Fosis tidak ditemukan" });
-    }
-
-    const bRekonQuery = `'${mFosisFolder.id}' in parents and (name = 'BAHAN REKON' or name = 'Bahan Rekon') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-    const bRekonRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(bRekonQuery)}&fields=files(id,name)`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-
-    if (!bRekonRes.ok) {
-      if (bRekonRes.status === 401 || bRekonRes.status === 403) {
-        return res.status(401).json({ error: "TOKEN_EXPIRED", message: "Google Drive token telah kedaluwarsa atau tidak valid." });
-      }
-      return res.status(bRekonRes.status).json({ error: "Folder BAHAN REKON tidak ditemukan" });
-    }
-
-    const bRekonData: any = await bRekonRes.json();
-    const bRekonFolder = bRekonData.files && bRekonData.files[0];
-
-    if (!bRekonFolder || !bRekonFolder.id) {
-      return res.status(404).json({ error: "Folder BAHAN REKON tidak ditemukan" });
-    }
-
-    const level3Query = `'${bRekonFolder.id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-    const level3Res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(level3Query)}&fields=files(id,name)&pageSize=1000`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-
-    if (!level3Res.ok) {
-      if (level3Res.status === 401 || level3Res.status === 403) {
-        return res.status(401).json({ error: "TOKEN_EXPIRED", message: "Google Drive token telah kedaluwarsa atau tidak valid." });
-      }
-      return res.status(level3Res.status).json({ error: "Sub-folder tidak ditemukan" });
-    }
-
-    const level3Data: any = await level3Res.json();
-    const subFolders: any[] = level3Data.files || [];
 
     const queryName = (searchName || "").toString().trim().toUpperCase();
     const querySto = (sto || "").toString().trim().toUpperCase();
