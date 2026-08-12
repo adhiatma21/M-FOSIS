@@ -447,21 +447,26 @@ export default function AnalisaAiPage({ driveToken, connectGoogleDrive, refreshG
                 addLog(`✓ Berkas KML ditemukan: "${targetFile.name}" (ID: ${targetFile.id})`);
                 addLog("Mengunduh berkas KML...");
                 
-                const dlUrl = `https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`;
-                let dlRes = await fetch(dlUrl, {
-                  headers: { 'Authorization': `Bearer ${tokenToUse}` }
-                });
+                let dlRes;
+                if (targetFile.id && (targetFile.id.startsWith('simulated-') || targetFile.id.includes('simulated'))) {
+                  dlRes = await fetch(`/api/drive/download-simulated-kml?name=${encodeURIComponent(targetFile.name)}`);
+                } else {
+                  const dlUrl = `https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`;
+                  dlRes = await fetch(dlUrl, {
+                    headers: { 'Authorization': `Bearer ${tokenToUse}` }
+                  });
 
-                // JIKA TOKEN KEDALUWARSA SAAT DOWNLOAD, SEGERAKAN SEBELUM GAGAL
-                if (!dlRes.ok && dlRes.status === 401 && refreshGoogleAccessToken) {
-                  addLog("Sesi Google Drive kedaluwarsa (401) saat mengunduh. Mencoba menyegarkan token...");
-                  const refreshedToken = await refreshGoogleAccessToken();
-                  if (refreshedToken) {
-                    tokenToUse = refreshedToken;
-                    addLog("✓ Token berhasil disegarkan. Mengulangi pengunduhan berkas...");
-                    dlRes = await fetch(dlUrl, {
-                      headers: { 'Authorization': `Bearer ${tokenToUse}` }
-                    });
+                  // JIKA TOKEN KEDALUWARSA SAAT DOWNLOAD, SEGERAKAN SEBELUM GAGAL
+                  if (!dlRes.ok && dlRes.status === 401 && refreshGoogleAccessToken) {
+                    addLog("Sesi Google Drive kedaluwarsa (401) saat mengunduh. Mencoba menyegarkan token...");
+                    const refreshedToken = await refreshGoogleAccessToken();
+                    if (refreshedToken) {
+                      tokenToUse = refreshedToken;
+                      addLog("✓ Token berhasil disegarkan. Mengulangi pengunduhan berkas...");
+                      dlRes = await fetch(dlUrl, {
+                        headers: { 'Authorization': `Bearer ${tokenToUse}` }
+                      });
+                    }
                   }
                 }
 

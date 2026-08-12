@@ -1416,24 +1416,29 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
       // Download and parse all matched files in parallel
       await Promise.all(
         files.map(async (file: any) => {
-          const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
-          let dlResponse = await fetch(downloadUrl, {
-            headers: {
-              'Authorization': `Bearer ${currentToken}`
-            }
-          });
+          let dlResponse;
+          if (file.id && (file.id.startsWith('simulated-') || file.id.includes('simulated'))) {
+            dlResponse = await fetch(`/api/drive/download-simulated-kml?name=${encodeURIComponent(file.name)}`);
+          } else {
+            const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+            dlResponse = await fetch(downloadUrl, {
+              headers: {
+                'Authorization': `Bearer ${currentToken}`
+              }
+            });
 
-          // JIKA TOKEN EXPIRED SAAT DOWNLOAD (401), REFRESH DAN RETRY
-          if (!dlResponse.ok && dlResponse.status === 401) {
-            console.warn("Mendapatkan 401 saat mengunduh berkas KML, mencoba penyegaran token...");
-            const refreshedToken = await refreshGoogleAccessToken();
-            if (refreshedToken) {
-              currentToken = refreshedToken;
-              dlResponse = await fetch(downloadUrl, {
-                headers: {
-                  'Authorization': `Bearer ${refreshedToken}`
-                }
-              });
+            // JIKA TOKEN EXPIRED SAAT DOWNLOAD (401), REFRESH DAN RETRY
+            if (!dlResponse.ok && dlResponse.status === 401) {
+              console.warn("Mendapatkan 401 saat mengunduh berkas KML, mencoba penyegaran token...");
+              const refreshedToken = await refreshGoogleAccessToken();
+              if (refreshedToken) {
+                currentToken = refreshedToken;
+                dlResponse = await fetch(downloadUrl, {
+                  headers: {
+                    'Authorization': `Bearer ${refreshedToken}`
+                  }
+                });
+              }
             }
           }
           
