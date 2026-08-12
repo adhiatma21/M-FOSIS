@@ -81,6 +81,7 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
   const [otbTarget, setOtbTarget] = useState<string>("OTB ST.Walikukun");
   const [statusTitikSambung, setStatusTitikSambung] = useState<string>("Titik Sambung Temporer");
   const [idAlpro, setIdAlpro] = useState<string>("");
+  const [namaStoValidasi, setNamaStoValidasi] = useState<string>("");
   
   // VALIDASI TITIK SAMBUNG dynamic coordinates
   const [latitude, setLatitude] = useState<string>("");
@@ -264,6 +265,10 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
         alert("Mohon masukkan ID / Nama Alpro.");
         return false;
       }
+      if (!namaStoValidasi.trim()) {
+        alert("Mohon masukkan Nama STO.");
+        return false;
+      }
       if (!latitude.trim() || !longitude.trim()) {
         alert("Mohon masukkan Koordinat Latitude dan Longitude secara lengkap.");
         return false;
@@ -355,8 +360,7 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
       setConsoleLogs([...initialLogs]);
     };
 
-    pushLog("[INFO] Memulai sinkronisasi data dikoordinasikan oleh M-FOSIS...");
-    pushLog(`[INFO] Penginput: ${currentUserName} (${currentUserEmail})`);
+    pushLog(`[START] Memulai proses sinkronisasi data (${jenisAlpro})...`);
 
     // Determine values according to active tab/dropdown context
     const currentIdNamaAlpro = jenisAlpro === "Update Data Gamas" ? "" : (idAlpro || idAlproBaru || idAlproLama || "");
@@ -364,18 +368,15 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
     const generatedFileName = `${tiketInsera || idAlpro || 'GAMAS'}_${Date.now()}_1.jpg`;
 
     // A. CONVERT PHOTOS TO BASE64 ARRAY
-    pushLog(`[INFO] Mengonversi ${uploadedPhotos.length} berkas foto bukti lapangan ke format Base64...`);
     const base64Photos = await Promise.all(uploadedPhotos.map(async (file, idx) => {
       try {
         const b64 = await fileToBase64(file);
-        pushLog(`[INFO] Sukses konversi berkas [${idx + 1}/${uploadedPhotos.length}] '${file.name}'`);
         return {
           name: `${tiketInsera || idQeLop || idAlpro || 'GAMAS'}_${Date.now()}_${idx + 1}.jpg`,
           size: `${(file.size / 1024).toFixed(1)} KB`,
           base64: b64
         };
       } catch (err: any) {
-        pushLog(`[ERROR] Gagal konversi '${file.name}': ${err?.message || String(err)}`);
         return null;
       }
     }));
@@ -385,32 +386,12 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
     let materialVolumeString = "";
     if (jenisAlpro === "Update Data Gamas" && gamasMaterials.length > 0) {
       materialVolumeString = gamasMaterials.map(m => `${m.name}: ${m.qty}`).join('\n');
-      pushLog(`[INFO] Submenu Material & Volume Terdeteksi: ${gamasMaterials.length} jenis.`);
     }
 
     // C. SIMULATE GOOGLE DRIVE AUTO FOLDERING SEARCH & CREATION
     if (jenisAlpro === "Update Data Gamas") {
-      pushLog(`[GDrive] Mengakses folder induk Google Drive: '/m-fosis'`);
-      pushLog(`[GDrive] Menelusuri subfolder target: '/m-fosis/bahan rekon'`);
-      pushLog(`[GDrive] Mencari folder LOP ber-ID: '${idQeLop}'...`);
-      
-      // Simulating realistic search check & auto creation of the folder
       const dummyDelay = (ms: number) => new Promise(res => setTimeout(res, ms));
-      await dummyDelay(600);
-      
-      pushLog(`[GDrive] Hasil pencarian: Folder '${idQeLop}' belum tersedia.`);
-      pushLog(`[GDrive] [AUTO-PROV] Membuat folder baru: '/m-fosis/bahan rekon/${idQeLop}'`);
       await dummyDelay(400);
-      pushLog(`[GDrive] Folder berhasil dibuat [ID: GD_FLD_${idQeLop.replace(/[^a-zA-Z0-9]/g, '_')}]`);
-      
-      pushLog(`[GDrive] Mengunggah ${validPhotos.length} berkas foto ke folder '${idQeLop}'...`);
-      validPhotos.forEach((ph, pIdx) => {
-        pushLog(`[GDrive] [${pIdx + 1}/${validPhotos.length}] Mengunggah '${ph.name}' (${ph.size})...`);
-      });
-      await dummyDelay(500);
-      pushLog(`[GDrive] [SUCCESS] Semua ${validPhotos.length} foto berhasil disimpan di M-Fosis/BAHAN REKON/${idQeLop}`);
-    } else {
-      pushLog(`[GDrive] Menyimpan berkas gambar utama: '/m-fosis/evident/${generatedFileName}'`);
     }
 
     // 1. ISOLATED FIRESTORE OPERATION (Async Isolation)
@@ -418,7 +399,6 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
     let firestoreErrorMessage = "";
     
     try {
-      pushLog(`[Database] Sinkronisasi salinan arsip ke Cloud Firestore database...`);
       // Wrap in isolated try-catch to keep Google Sheet post unblocked even if Firestore security rule blocks it
       await addDoc(collection(db, 'validations_simulated'), {
         jenisAlpro,
@@ -429,7 +409,10 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
         idNamaAlpro: currentIdNamaAlpro,
         idQeLop: idQeLop || "",
         tiketInsera: tiketInsera || "",
-        sto: sto || "",
+        sto: jenisAlpro === "Validasi titik sambung" ? namaStoValidasi : (sto || ""),
+        namaSto: jenisAlpro === "Validasi titik sambung" ? namaStoValidasi : (sto || ""),
+        segmentKabel: jenisAlpro === "Validasi titik sambung" ? (subJenisAlpro === "Link SURGE" ? `Link SURGE (${otbAwal} -> ${otbTarget})` : subJenisAlpro) : "",
+        koordinat: koordinat || `${latitude}, ${longitude}`,
         segmentgamas: segmentJaringan || "",
         jenisQe: kategoriQe || "",
         kondisiFisik: actualKondisiFisik || "",
@@ -444,46 +427,50 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
         photosCount: validPhotos.length,
         materialsUsed: materialVolumeString || ""
       });
-      pushLog(`[Database] [SUCCESS] Data tersimpan di Cloud Firestore 'validations_simulated'.`);
     } catch (e: any) {
       firestoreSuccess = false;
       firestoreErrorMessage = e?.message || String(e);
-      pushLog(`[PERINGATAN FIRESTORE FRAGILE] Gagal menyimpan ke Firestore: ${firestoreErrorMessage}`);
       console.warn(`[PERINGATAN FIRESTORE FRAGILE] Gagal menyimpan ke Firestore: ${firestoreErrorMessage}`);
     }
 
     // 3. SECURE PAYLOAD MAPPING FOR SPREADSHEETS
-    const targetSheetName = jenisAlpro === "Validasi titik sambung" ? "Validasi m-fosis" : "M-fosis";
-    pushLog(`[SPREADSHEET] Memetakan baris sinkronisasi ke naskah Google Sheet '${targetSheetName}'`);
-    if (jenisAlpro === "Update Data Gamas") {
-      pushLog(`[SPREADSHEET] Menyimpan koordinat GPS Gamas ke Kolom L (LAT) dan Kolom M (LONG)`);
-      pushLog(`[SPREADSHEET] Kolom L (Index 11) diisi Latitude: ${latitude}`);
-      pushLog(`[SPREADSHEET] Kolom M (Index 12) diisi Longitude: ${longitude}`);
-      if (materialVolumeString) {
-        pushLog(`[SPREADSHEET] Menyimpan daftar ${gamasMaterials.length} material ke Kolom AF (index 31)`);
-      }
-    }
+    const targetSheetName = "M-Fosis";
 
     // 3.5 DIRECT SPREADSHEET INSERT FOR VALIDASI TITIK SAMBUNG
     if (jenisAlpro === "Validasi titik sambung") {
       const gsheetsToken = driveToken || localStorage.getItem('m_fosis_drive_token');
       if (gsheetsToken) {
-        pushLog(`[SPREADSHEET] Sinkronisasi langsung ke Google Sheet 'Validasi m-fosis'...`);
         try {
           const spreadsheetId = "1-O0AQxDPt5Zb2OHHE5Caj6KTiINZIomSgBIbTjnoLN8";
-          const sheetName = "Validasi m-fosis";
-          const range = `'${sheetName}'!A:E`;
+          const sheetName = "M-Fosis";
+          const range = `'${sheetName}'!A:R`;
           const sheetsApiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`;
           
+          const segmentKabelText = subJenisAlpro === "Link SURGE" ? `Link SURGE (${otbAwal} -> ${otbTarget})` : subJenisAlpro;
+          const koordinatText = koordinat || `${latitude}, ${longitude}`;
+
           const rowData = [
-            new Date().toLocaleString('id-ID'), // Tanggal/Waktu
-            subJenisAlpro === "Link SURGE" ? `Link SURGE (${otbAwal} -> ${otbTarget})` : subJenisAlpro,                     // SEGMENT KABEL
-            currentIdNamaAlpro,                 // ID / NAMA ALPRO
-            statusTitikSambung,                 // STATUS TITIK SAMBUNG
-            koordinat || `${latitude}, ${longitude}` // TITIK KOORDINAT (LATITUDE, LONGITUDE)
+            new Date().toLocaleString('id-ID'), // Col A (1): Timestamp
+            "Validasi titik sambung",           // Col B (2): Jenis Alpro
+            currentIdNamaAlpro,                 // Col C (3): ID / NAMA ALPRO
+            currentUserName,                    // Col D (4): User Name
+            currentUserEmail,                   // Col E (5): User Email
+            namaStoValidasi,                    // Col F (6): NAMA STO (KOLOM F)
+            "",                                 // Col G (7)
+            "",                                 // Col H (8)
+            statusTitikSambung,                 // Col I (9): STATUS TITIK SAMBUNG (KOLOM I)
+            "",                                 // Col J (10)
+            "",                                 // Col K (11)
+            latitude || "",                     // Col L (12): Latitude
+            longitude || "",                    // Col M (13): Longitude
+            "",                                 // Col N (14)
+            "",                                 // Col O (15)
+            "",                                 // Col P (16)
+            segmentKabelText,                   // Col Q (17): Data SEGMENT KABEL (KOLOM Q)
+            koordinatText                       // Col R (18): TITIK KOORDINAT (KOLOM R)
           ];
 
-          const response = await fetch(sheetsApiUrl, {
+          await fetch(sheetsApiUrl, {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${gsheetsToken}`,
@@ -493,33 +480,27 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
               values: [rowData]
             })
           });
-
-          if (response.ok) {
-            pushLog(`[SPREADSHEET] [SUCCESS] Data berhasil disimpan ke Spreadsheet ID ${spreadsheetId} [Sheet: ${sheetName}]`);
-          } else {
-            const errBody = await response.text();
-            pushLog(`[SPREADSHEET] [WARNING] Gagal menyimpan langsung ke Google Sheet: ${response.status} - ${errBody}`);
-            pushLog(`[SPREADSHEET] [INFO] Memastikan baris data tetap dikirim melalui saluran cadangan.`);
-          }
         } catch (sheetErr: any) {
-          pushLog(`[SPREADSHEET] [WARNING] Kendala API Google Sheets: ${sheetErr?.message || String(sheetErr)}`);
+          console.warn(`[SPREADSHEET] Kendala API Google Sheets: ${sheetErr?.message || String(sheetErr)}`);
         }
-      } else {
-        pushLog(`[SPREADSHEET] [INFO] Akun Google belum terhubung. Silakan hubungkan Google Drive terlebih dahulu di menu "Kelola Data" atau "Dashboard" agar dapat mensinkronkan data langsung ke Google Sheets.`);
       }
     }
 
+    const segmentKabelVal = subJenisAlpro === "Link SURGE" ? `Link SURGE (${otbAwal} -> ${otbTarget})` : subJenisAlpro;
+    const koordinatVal = koordinat || `${latitude}, ${longitude}`;
+
     const payload = {
       jenisAlpro,
-      subJenisAlpro: jenisAlpro === "Validasi titik sambung" 
-        ? (subJenisAlpro === "Link SURGE" ? `Link SURGE (${otbAwal} -> ${otbTarget})` : subJenisAlpro) 
-        : "",
+      subJenisAlpro: jenisAlpro === "Validasi titik sambung" ? segmentKabelVal : "",
       statusTitikSambung: jenisAlpro === "Validasi titik sambung" ? statusTitikSambung : "",
       idNamaAlpro: currentIdNamaAlpro,
       idQeLop: idQeLop || "",
       tiketInsera: tiketInsera || "",
-      sto: sto || "",
-      segment: segmentJaringan || "",
+      sto: jenisAlpro === "Validasi titik sambung" ? namaStoValidasi : (sto || ""),
+      namaSto: jenisAlpro === "Validasi titik sambung" ? namaStoValidasi : (sto || ""),
+      segment: jenisAlpro === "Validasi titik sambung" ? segmentKabelVal : (segmentJaringan || ""),
+      segmentKabel: segmentKabelVal,
+      koordinat: koordinatVal,
       jenisQe: kategoriQe || "",
       kondisiFisik: actualKondisiFisik || "",
       pid: projectId || "",
@@ -532,14 +513,17 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
       fileName: validPhotos[0]?.name || generatedFileName,
       allPhotos: validPhotos.map(p => ({ name: p.name, size: p.size })),
       materialVolume: materialVolumeString,
-      sheetName: jenisAlpro === "Validasi titik sambung" ? "Validasi m-fosis" : "M-fosis",
-      targetSheet: jenisAlpro === "Validasi titik sambung" ? "Validasi m-fosis" : "M-fosis",
-      sheet: jenisAlpro === "Validasi titik sambung" ? "Validasi m-fosis" : "M-fosis"
+      sheetName: "M-Fosis",
+      targetSheet: "M-Fosis",
+      sheet: "M-Fosis",
+      colF: namaStoValidasi,
+      colI: statusTitikSambung,
+      colQ: segmentKabelVal,
+      colR: koordinatVal
     };
 
     // 4. CALL GOOGLE APPS SCRIPT ENDPOINT
     try {
-      pushLog(`[SPREADSHEET] Menghubungi Google Web Services Apps Script Engine...`);
       await fetch(APPS_SCRIPT_URL, {
         method: "POST",
         mode: "no-cors",
@@ -548,9 +532,8 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
         },
         body: JSON.stringify(payload)
       });
-      pushLog(`[SPREADSHEET] [SUCCESS] Baris disisipkan & disinkronisasikan ke Google Sheet secara real-time.`);
     } catch (err: any) {
-      pushLog(`[ERROR] Google Apps Script tidak menanggapi secara real-time: ${err?.message || String(err)}`);
+      console.warn(`[ERROR] Google Apps Script error: ${err?.message || String(err)}`);
     }
 
     // 5. FINALIZE INTERFACES
@@ -562,10 +545,10 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
     // Append to live history record list
     const detailLog: any = {};
     if (jenisAlpro === "Validasi titik sambung") {
-      detailLog["Latitude"] = latitude;
-      detailLog["Longitude"] = longitude;
-      detailLog["Segment Kabel"] = subJenisAlpro === "Link SURGE" ? `Link SURGE (${otbAwal} -> ${otbTarget})` : subJenisAlpro;
+      detailLog["Nama STO"] = namaStoValidasi;
       detailLog["Status Titik Sambung"] = statusTitikSambung;
+      detailLog["Segment Kabel"] = segmentKabelVal;
+      detailLog["Titik Koordinat"] = koordinatVal;
     } else if (jenisAlpro === "Update Data Gamas") {
       detailLog["Tiket Insera"] = tiketInsera;
       detailLog["STO"] = sto;
@@ -604,10 +587,11 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
     setIsSubmitting(false);
     setSubmitSuccess(true);
     setUploadStatus('success');
-    pushLog("[SUCCESS] Semua proses otomasi berhasil dituntaskan dengan sempurna!");
+    pushLog(`[SUCCESS] Proses sinkronisasi data (${jenisAlpro}) selesai disinkronkan ke Google Sheets M-Fosis.`);
 
     // Auto-Reset dynamic input fields EXCEPT map coordinates states
     setIdAlpro("");
+    setNamaStoValidasi("");
     setLatitude("");
     setLongitude("");
     setIdQeLop("");
@@ -631,6 +615,7 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
 
   const clearForm = () => {
     setIdAlpro("");
+    setNamaStoValidasi("");
     setLatitude("");
     setLongitude("");
     setIdQeLop("");
@@ -836,6 +821,17 @@ export default function ValidasiAlpro({ driveToken, connectGoogleDrive, isConnec
                     value={idAlpro}
                     onChange={(e) => setIdAlpro(e.target.value)}
                     placeholder="Contoh: JC-PGO-FAA/02" 
+                    className="w-full px-4 py-3 rounded-2xl bg-neutral-50 border border-neutral-200 text-sm outline-none focus:bg-white focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder:italic placeholder:text-xs placeholder:text-slate-400 font-light"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase text-neutral-400 tracking-wider">NAMA STO</label>
+                  <input 
+                    type="text" 
+                    value={namaStoValidasi}
+                    onChange={(e) => setNamaStoValidasi(e.target.value)}
+                    placeholder="Contoh: ST.Walikukun / MDN / PGO" 
                     className="w-full px-4 py-3 rounded-2xl bg-neutral-50 border border-neutral-200 text-sm outline-none focus:bg-white focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder:italic placeholder:text-xs placeholder:text-slate-400 font-light"
                   />
                 </div>
