@@ -1,4 +1,4 @@
-import app from "../server";
+import app from "../app.js";
 
 export default function handler(req: any, res: any) {
   if (req.url && !req.url.startsWith("/api")) {
@@ -6,4 +6,3 @@ export default function handler(req: any, res: any) {
   }
   return app(req, res);
 }
-
