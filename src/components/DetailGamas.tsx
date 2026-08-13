@@ -207,7 +207,7 @@ const getKmlIconType = (name: string, desc: string): string => {
   return 'general';
 };
 
-const getCustomKmlIcon = (iconType: string) => {
+const getCustomKmlIcon = (iconType: string, isBlinking: boolean = false) => {
   let bgColor = "bg-blue-500 border-blue-600 shadow-blue-100 text-white";
   let symbol = "📍";
   
@@ -225,11 +225,20 @@ const getCustomKmlIcon = (iconType: string) => {
     symbol = "🟢";
   }
 
+  const pingHtml = isBlinking
+    ? `<div class="absolute -inset-2 rounded-full bg-red-500 opacity-75 animate-ping"></div>`
+    : '';
+
   return L.divIcon({
-    className: 'custom-kml-div-icon',
-    html: `<div class="flex items-center justify-center w-7 h-7 rounded-full text-xs shadow-md border-2 font-sans font-bold transform -translate-x-[2px] -translate-y-[2px] transition-all hover:scale-110 ${bgColor}">${symbol}</div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14]
+    className: 'custom-kml-div-icon relative',
+    html: `
+      <div class="relative flex items-center justify-center">
+        ${pingHtml}
+        <div class="relative z-10 flex items-center justify-center w-8 h-8 rounded-full text-xs shadow-md border-2 font-sans font-bold transition-all hover:scale-110 ${bgColor}">${symbol}</div>
+      </div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
   });
 };
 
@@ -415,7 +424,7 @@ export default function DetailGamas({
   const [isLoadingKml, setIsLoadingKml] = useState<boolean>(false);
   const [kmlError, setKmlError] = useState<string | null>(null);
   const [parsedKmlCoords, setParsedKmlCoords] = useState<[number, number][]>([]);
-  const [kmlPoints, setKmlPoints] = useState<{lat: number, lng: number, name: string, description: string}[]>([]);
+  const [kmlPoints, setKmlPoints] = useState<{lat: number, lng: number, name: string, description: string, properties?: any, matched?: boolean}[]>([]);
 
   const fetchKmlFile = async () => {
     let token = localStorage.getItem('m_fosis_drive_token');
@@ -517,9 +526,10 @@ export default function DetailGamas({
         const geoJson = toGeoJSON.kml(kmlDom);
         
         let parsedCoords: [number, number][] = [];
-        const extractedPoints: {lat: number, lng: number, name: string, description: string}[] = [];
+        const extractedPoints: {lat: number, lng: number, name: string, description: string, rawXmlText?: string, properties?: any, matched?: boolean}[] = [];
         
-        const extractCoords = (geometry: any) => {
+        // 1. Extract LineString coordinates for cable route path
+        const extractRouteCoords = (geometry: any) => {
           if (!geometry) return;
           if (geometry.type === 'LineString' || geometry.type === 'MultiLineString') {
             const coords = geometry.coordinates || [];
@@ -540,36 +550,187 @@ export default function DetailGamas({
               }
             });
           } else if (geometry.type === 'GeometryCollection') {
-            (geometry.geometries || []).forEach(extractCoords);
+            (geometry.geometries || []).forEach(extractRouteCoords);
           }
         };
 
-        const processFeature = (feature: any) => {
+        const processRouteFeature = (feature: any) => {
           if (!feature) return;
           if (feature.type === 'Feature') {
-            extractCoords(feature.geometry);
-            
-            const geom = feature.geometry;
-            const props = feature.properties || {};
-            if (geom && geom.type === 'Point') {
-              const lng = parseFloat(geom.coordinates[0]);
-              const lat = parseFloat(geom.coordinates[1]);
-              if (!isNaN(lat) && !isNaN(lng)) {
-                extractedPoints.push({
-                  lat,
-                  lng,
-                  name: props.name || `Titik ${extractedPoints.length + 1}`,
-                  description: props.description || 'Titik koordinat terekam dalam file KML'
-                });
-              }
-            }
-          } else if (feature.type === 'FeatureCollection' || feature.features) {
-            (feature.features || []).forEach(processFeature);
+            extractRouteCoords(feature.geometry);
+          } else if (feature.type === 'FeatureCollection' || Array.isArray(feature.features)) {
+            (feature.features || []).forEach(processRouteFeature);
           }
         };
+        processRouteFeature(geoJson);
 
-        processFeature(geoJson);
-        setKmlPoints(extractedPoints);
+        // 2. Extract Point Placemarks DIRECTLY from KML XML DOM for 100% accurate coordinates & names
+        const placemarkNodes = Array.from(kmlDom.getElementsByTagName('Placemark')).concat(
+          Array.from(kmlDom.getElementsByTagNameNS('*', 'Placemark'))
+        );
+        const uniquePlacemarks = Array.from(new Set(placemarkNodes));
+
+        uniquePlacemarks.forEach(pm => {
+          const pointNodes = Array.from(pm.getElementsByTagName('Point')).concat(
+            Array.from(pm.getElementsByTagNameNS('*', 'Point'))
+          );
+          if (pointNodes.length === 0) return;
+
+          const pointNode = pointNodes[0];
+          const coordNodes = Array.from(pointNode.getElementsByTagName('coordinates')).concat(
+            Array.from(pointNode.getElementsByTagNameNS('*', 'coordinates'))
+          );
+          if (coordNodes.length === 0 || !coordNodes[0].textContent) return;
+
+          const rawCoords = coordNodes[0].textContent.trim();
+          // KML coordinates format in <coordinates>: "longitude,latitude[,elevation]"
+          const parts = rawCoords.split(/[\s,]+/);
+          if (parts.length < 2) return;
+
+          const lng = parseFloat(parts[0]);
+          const lat = parseFloat(parts[1]);
+
+          if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+
+          const nameNodes = Array.from(pm.getElementsByTagName('name')).concat(
+            Array.from(pm.getElementsByTagNameNS('*', 'name'))
+          );
+          const pmName = nameNodes[0]?.textContent?.trim() || '';
+
+          const descNodes = Array.from(pm.getElementsByTagName('description')).concat(
+            Array.from(pm.getElementsByTagNameNS('*', 'description'))
+          );
+          const pmDesc = descNodes[0]?.textContent?.trim() || '';
+
+          let extText = '';
+          const dataNodes = Array.from(pm.getElementsByTagName('Data')).concat(
+            Array.from(pm.getElementsByTagNameNS('*', 'Data')),
+            Array.from(pm.getElementsByTagName('SimpleData')),
+            Array.from(pm.getElementsByTagNameNS('*', 'SimpleData')),
+            Array.from(pm.getElementsByTagName('value')),
+            Array.from(pm.getElementsByTagNameNS('*', 'value'))
+          );
+          dataNodes.forEach(node => {
+            if (node.textContent) extText += ' ' + node.textContent.trim();
+          });
+
+          extractedPoints.push({
+            lat, // Latitude (index 1)
+            lng, // Longitude (index 0)
+            name: pmName || `Titik ${extractedPoints.length + 1}`,
+            description: pmDesc || 'Titik koordinat terekam dalam file KML',
+            rawXmlText: `${pmName} ${pmDesc} ${extText}`
+          });
+        });
+
+        // Fallback to GeoJSON features if direct XML parser found no point placemarks
+        if (extractedPoints.length === 0) {
+          const processPointFeature = (feature: any) => {
+            if (!feature) return;
+            if (feature.type === 'Feature') {
+              const props = feature.properties || {};
+              const extractPointGeom = (geom: any) => {
+                if (!geom) return;
+                if (geom.type === 'Point' && Array.isArray(geom.coordinates)) {
+                  const lng = parseFloat(geom.coordinates[0]);
+                  const lat = parseFloat(geom.coordinates[1]);
+                  if (!isNaN(lat) && !isNaN(lng)) {
+                    let descText = typeof props.description === 'string' ? props.description : (props.description ? JSON.stringify(props.description) : '');
+                    extractedPoints.push({
+                      lat,
+                      lng,
+                      name: props.name || `Titik ${extractedPoints.length + 1}`,
+                      description: descText || 'Titik koordinat terekam dalam file KML',
+                      properties: props,
+                      rawXmlText: `${props.name || ''} ${descText} ${JSON.stringify(props)}`
+                    });
+                  }
+                } else if (geom.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
+                  geom.geometries.forEach(extractPointGeom);
+                }
+              };
+              extractPointGeom(feature.geometry);
+            } else if (feature.type === 'FeatureCollection' || Array.isArray(feature.features)) {
+              (feature.features || []).forEach(processPointFeature);
+            }
+          };
+          processPointFeature(geoJson);
+        }
+
+        // 3. Mark points matching search query (e.g. ODP-MNZ-FAH/06)
+        const targetSearchQuery = (searchName || mappedRecord.alproName || activeRecord.alproName || '').trim();
+        const rawTarget = targetSearchQuery.toUpperCase();
+        const targetClean = rawTarget.replace(/[\/\s_.-]+/g, '-');
+        const targetAlphaNum = rawTarget.replace(/[^A-Z0-9]/g, '');
+
+        let maxScore = 0;
+        const scoredPoints = extractedPoints.map(pt => {
+          const ptNameUpper = (pt.name || '').toUpperCase().trim();
+          const ptNameClean = ptNameUpper.replace(/[\/\s_.-]+/g, '-');
+          const ptNameAlphaNum = ptNameUpper.replace(/[^A-Z0-9]/g, '');
+
+          const ptDescUpper = (typeof pt.description === 'string' ? pt.description : '').toUpperCase();
+          const ptRawUpper = (pt.rawXmlText || '').toUpperCase();
+
+          const fullPtText = `${ptNameUpper} ${ptDescUpper} ${ptRawUpper}`;
+          const fullPtClean = fullPtText.replace(/[\/\s_.-]+/g, '-');
+          const fullPtAlphaNum = fullPtText.replace(/[^A-Z0-9]/g, '');
+
+          let score = 0;
+          if (rawTarget.length >= 2) {
+            // 1. Exact match on Placemark name (raw, clean normalized, or alphanumeric)
+            if (
+              ptNameUpper === rawTarget || 
+              (targetClean.length >= 2 && ptNameClean === targetClean) || 
+              (targetAlphaNum.length >= 3 && ptNameAlphaNum === targetAlphaNum)
+            ) {
+              score = 100;
+            }
+            // 2. Placemark name CONTAINS target OR target CONTAINS Placemark name
+            else if (
+              (rawTarget.length >= 2 && ptNameUpper.includes(rawTarget)) || 
+              (targetClean.length >= 2 && ptNameClean.includes(targetClean)) || 
+              (targetAlphaNum.length >= 3 && ptNameAlphaNum.includes(targetAlphaNum)) ||
+              (ptNameUpper.length >= 3 && rawTarget.includes(ptNameUpper)) ||
+              (ptNameClean.length >= 3 && targetClean.includes(ptNameClean))
+            ) {
+              score = 90;
+            }
+            // 3. Full Placemark text (name, description, extended data) CONTAINS the search target
+            else if (
+              fullPtText.includes(rawTarget) || 
+              (targetClean.length >= 2 && fullPtClean.includes(targetClean)) || 
+              (targetAlphaNum.length >= 3 && fullPtAlphaNum.includes(targetAlphaNum))
+            ) {
+              score = 80;
+            }
+          }
+
+          if (score > maxScore) {
+            maxScore = score;
+          }
+
+          return { pt, score };
+        });
+
+        const finalPoints = scoredPoints.map(item => ({
+          ...item.pt,
+          matched: maxScore > 0 && item.score === maxScore
+        }));
+
+        setKmlPoints(finalPoints);
+
+        // Required Console Log for Placemark Point matching & Leaflet Marker coordinates
+        finalPoints.forEach(pt => {
+          if (pt.matched) {
+            console.log(
+              "TARGET:", targetSearchQuery,
+              "NAMA PLACEMARK:", pt.name,
+              "KOORDINAT KML:", `${pt.lng},${pt.lat}`,
+              "KOORDINAT LEAFLET:", [pt.lat, pt.lng]
+            );
+          }
+        });
         
         if (parsedCoords.length > 0) {
           setParsedKmlCoords(parsedCoords);
@@ -1879,7 +2040,7 @@ export default function DetailGamas({
                       {photosError === "TOKEN_EXPIRED" ? (
                         <>
                           <p className="text-xs font-bold text-red-700">Sesi Google Drive Telah Habis / Kedaluwarsa (TOKEN_EXPIRED)</p>
-                          <p className="text-[10px] text-slate-500 mt-1 max-w-sm">Silakan kembali ke dashboard utama dan klik tombol <span className="font-semibold text-red-600">"Hubungkan Google Drive"</span> di panel sebelah kiri untuk memperbarui sesi Google Drive Anda.</p>
+                          <p className="text-[10px] text-slate-500 mt-1 max-w-sm">Silakan kembali ke dashboard utama dan klik tombol <span className="font-semibold text-red-600">"HUBUNGKAN CLOUD"</span> di panel sebelah kiri untuk memperbarui sesi Google Drive Anda.</p>
                         </>
                       ) : (
                         <>
@@ -2277,7 +2438,19 @@ export default function DetailGamas({
                         {kmlPoints.length > 0 ? (
                           kmlPoints.map((pt, i) => {
                             const iconType = getKmlIconType(pt.name, pt.description);
-                            const customIcon = getCustomKmlIcon(iconType);
+                            const targetName = (mappedRecord?.alproName || activeRecord?.alproName || activeRecord?.sto || '').toUpperCase();
+                            const ptName = (pt.name || '').toUpperCase();
+                            const ptDesc = (pt.description || '').toUpperCase();
+                            const isMatched = pt.matched !== undefined ? pt.matched : (
+                              targetName.length > 2 && (
+                                ptName.includes(targetName) ||
+                                targetName.includes(ptName) ||
+                                ptDesc.includes(targetName) ||
+                                ptName.replace(/[\/\\]/g, '-').includes(targetName.replace(/[\/\\]/g, '-')) ||
+                                targetName.replace(/[\/\\]/g, '-').includes(ptName.replace(/[\/\\]/g, '-'))
+                              )
+                            );
+                            const customIcon = getCustomKmlIcon(iconType, isMatched);
                             return (
                               <Marker
                                 key={`kml-point-${i}`}

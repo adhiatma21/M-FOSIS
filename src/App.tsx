@@ -1144,9 +1144,6 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
         console.error("Local storage set item error:", e);
       }
       setDriveToken(credential.accessToken);
-      if (!silent) {
-        alert('Berhasil terhubung dengan Google Drive!');
-      }
       return credential.accessToken;
     } catch (err: any) {
       const errCode = err?.code || '';
@@ -3317,7 +3314,6 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
               </div>
               <div>
                 <h2 className="text-xl font-extrabold text-red-600 tracking-tight">LOGIN AREA</h2>
-                <p className="text-[10px] text-red-400 font-bold uppercase tracking-wider">Sistem Verifikasi Manual</p>
               </div>
             </div>
             
@@ -3499,7 +3495,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
               <ExternalLink size={14} />
             </button>
           </div>
-          <p className="text-[10px] text-slate-500 font-mono text-center">v2.0 • Enterprise GIS</p>
+          <p className="text-[10px] text-slate-500 font-mono text-center">V2.0 • adhiatma_21 creative studio</p>
         </div>
       </aside>
 
@@ -4141,7 +4137,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                       ) : (
                         <div className="space-y-2">
                           <p className="text-[10px] text-neutral-400 leading-normal uppercase font-bold tracking-tight">
-                            Masuk menggunakan Google Drive akun Anda untuk mengaktifkan sinkronisasi otomatis KML di folder "1AkJdPSJRWY6_xzWcQZM2cEsG-AT_2Jg_".
+                            Masuk dengan Akun Cloud anda yang sudah terdaftar
                           </p>
                           <button
                             type="button"
@@ -4150,7 +4146,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                             className="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-wider py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
                           >
                             <Cloud size={14} className={isConnectingDrive ? "animate-spin" : ""} />
-                            {isConnectingDrive ? "Menghubungkan..." : "Hubungkan Google Drive"}
+                            {isConnectingDrive ? "Menghubungkan..." : "HUBUNGKAN CLOUD"}
                           </button>
                         </div>
                       )}
@@ -4266,7 +4262,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                       ) : !driveToken ? (
                         <>
                           <Cloud size={16} />
-                          <span>Hubungkan Drive & Tampilkan Rute</span>
+                          <span>TAMPILKAN RUTE</span>
                         </>
                       ) : (
                         <>
@@ -4437,10 +4433,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                     <div className="text-center py-10 px-4">
                       <Folder className="mx-auto text-neutral-300 opacity-50 mb-3" size={36} />
                       <p className="text-xs font-bold text-neutral-400 uppercase tracking-wider leading-relaxed">
-                        Data KML Kosong / Belum Terambil
-                      </p>
-                      <p className="text-[10px] text-neutral-400 mt-1 uppercase font-bold leading-normal">
-                        Koneksikan Google Drive untuk memproses data dari folder otomatis.
+                        Data KML Kosong / Belum Terambil , Koneksikan Cloud untuk memproses data dari folder otomatis
                       </p>
                     </div>
                   )}

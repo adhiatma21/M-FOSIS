@@ -515,6 +515,232 @@ async function findBahanRekonFolder(accessToken: string, mFosisFolderId: string 
   return null;
 }
 
+// Helper to extract ALPRO code from input (e.g., ODP-MNZ-FD/11 -> MNZ-FD, ODC-MSP-FA -> MSP-FA)
+function extractAlproCode(searchName?: string, site?: string, sto?: string): string {
+  const raw = (searchName || site || "").toString().trim().toUpperCase();
+
+  // Take the part before slash e.g. ODP-MNZ-FD/11 -> ODP-MNZ-FD
+  const partBeforeSlash = raw.split('/')[0].trim();
+
+  // Strip prefixes ODP-, ODC-, FDT-, RK-, OLT-
+  const cleaned = partBeforeSlash.replace(/^(ODP|ODC|FDT|RK|OLT)[-_]/i, "").trim();
+
+  if (cleaned) return cleaned;
+
+  if (sto && site) {
+    const cleanSto = sto.trim().toUpperCase().replace(/^(ST\.|ST_)/, "");
+    const cleanSite = site.trim().toUpperCase();
+    return `${cleanSto}-${cleanSite}`;
+  }
+
+  return raw;
+}
+
+// Helper to find a specific segment folder (DISTRIBUSI, FEEDER, SURGE)
+async function findSegmentFolder(accessToken: string, mFosisFolderId: string | null, segmentName: string): Promise<{ id: string; name: string } | null> {
+  const segUpper = segmentName.toUpperCase();
+  const searchNames = [
+    segUpper,
+    segUpper.toLowerCase(),
+    segUpper.charAt(0) + segUpper.slice(1).toLowerCase(),
+    `Kabel ${segUpper}`,
+    `KABEL ${segUpper}`,
+    `Segment ${segUpper}`,
+    `SEGMENT ${segUpper}`
+  ];
+
+  if (mFosisFolderId) {
+    // 1. Direct parent = mFosisFolderId
+    try {
+      const nameConds = searchNames.map(n => `name = '${n}'`).join(' or ');
+      const q = `'${mFosisFolderId}' in parents and (${nameConds}) and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data.files && data.files[0]) {
+          return data.files[0];
+        }
+      }
+    } catch (e) {
+      console.warn(`[Google Drive Search] Gagal kueri folder ${segmentName} di M-Fosis:`, e);
+    }
+
+    // 2. Parent = BAHAN REKON
+    try {
+      const bRekonFolder = await findBahanRekonFolder(accessToken, mFosisFolderId);
+      if (bRekonFolder && bRekonFolder.id) {
+        const nameConds = searchNames.map(n => `name = '${n}'`).join(' or ');
+        const q = `'${bRekonFolder.id}' in parents and (${nameConds}) and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (res.ok) {
+          const data: any = await res.json();
+          if (data.files && data.files[0]) {
+            return data.files[0];
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[Google Drive Search] Gagal kueri folder ${segmentName} di Bahan Rekon:`, e);
+    }
+  }
+
+  // 3. Global search
+  try {
+    const globalNameConds = searchNames.map(n => `name = '${n}'`).join(' or ');
+    const globalQ = `(${globalNameConds}) and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(globalQ)}&fields=files(id,name)`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (res.ok) {
+      const data: any = await res.json();
+      if (data.files && data.files[0]) {
+        return data.files[0];
+      }
+    }
+  } catch (e) {
+    console.warn(`[Google Drive Search] Gagal kueri global folder ${segmentName}:`, e);
+  }
+
+  return null;
+}
+
+// Helper to find subfolder by ALPRO code (e.g. MNZ-FD or MSP-FA) inside a parent folder
+async function findSubfolderByAlproCode(accessToken: string, parentFolderId: string, alproCode: string): Promise<{ id: string; name: string } | null> {
+  if (!alproCode) return null;
+  try {
+    const subQuery = `'${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subQuery)}&fields=files(id,name)&pageSize=1000`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (!res.ok) return null;
+
+    const data: any = await res.json();
+    const subfolders = data.files || [];
+
+    const cleanAlpro = alproCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    // Match folder name containing cleanAlpro or vice versa
+    let matched = subfolders.find((f: any) => {
+      const cleanF = (f.name || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      return cleanF === cleanAlpro || cleanF.includes(cleanAlpro) || cleanAlpro.includes(cleanF);
+    });
+
+    if (matched) {
+      console.log(`[Google Drive Search] Hierarchical: Menemukan subfolder ALPRO "${matched.name}" (ID: ${matched.id}) untuk kode "${alproCode}"`);
+      return matched;
+    }
+  } catch (e) {
+    console.warn(`[Google Drive Search] Gagal mencari subfolder ALPRO untuk "${alproCode}":`, e);
+  }
+  return null;
+}
+
+// Helper to get all KML files in a parent folder
+async function findKmlsInFolder(accessToken: string, folderId: string): Promise<any[]> {
+  try {
+    const kmlQuery = `'${folderId}' in parents and name contains '.kml' and trashed = false`;
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(kmlQuery)}&fields=files(id,name,size)&pageSize=100`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (res.ok) {
+      const data: any = await res.json();
+      let files = (data.files || []).filter((f: any) => (f.name || "").toLowerCase().endsWith(".kml"));
+
+      if (files.length === 0) {
+        // Check 1 level deeper subfolders if no direct KMLs found
+        const innerSubQuery = `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+        const innerSubRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(innerSubQuery)}&fields=files(id,name)`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (innerSubRes.ok) {
+          const innerData: any = await innerSubRes.json();
+          const innerFolders = innerData.files || [];
+          for (const fld of innerFolders) {
+            const subKmlQuery = `'${fld.id}' in parents and name contains '.kml' and trashed = false`;
+            const subKmlRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subKmlQuery)}&fields=files(id,name,size)`, {
+              headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            if (subKmlRes.ok) {
+              const subKmlData: any = await subKmlRes.json();
+              const subFiles = (subKmlData.files || []).filter((f: any) => (f.name || "").toLowerCase().endsWith(".kml"));
+              files.push(...subFiles);
+            }
+          }
+        }
+      }
+      return files;
+    }
+  } catch (e) {
+    console.warn(`[Google Drive Search] Gagal mencari berkas KML di folder ID "${folderId}":`, e);
+  }
+  return [];
+}
+
+// Helper to filter KML files by checking if they contain search query in name or content
+async function filterKmlsByContent(accessToken: string, kmlFiles: any[], searchQuery: string): Promise<any[]> {
+  if (!kmlFiles || kmlFiles.length === 0) return [];
+  if (!searchQuery || !searchQuery.trim()) return kmlFiles;
+
+  const cleanQuery = searchQuery.trim().toUpperCase();
+  console.log(`[Google Drive Filter] Memfilter ${kmlFiles.length} berkas KML dengan kata kunci "${cleanQuery}"...`);
+
+  const matchedFiles: any[] = [];
+
+  for (const file of kmlFiles) {
+    if (!file.id || file.id.startsWith("simulated-")) {
+      matchedFiles.push(file);
+      continue;
+    }
+
+    // 1. Check file name first
+    const fnameUpper = (file.name || "").toUpperCase();
+    const queryNoSlash = cleanQuery.replace(/[\/\\]/g, "_");
+    const queryHyphen = cleanQuery.replace(/\//g, "-");
+    const querySlash = cleanQuery.replace(/-/g, "/");
+
+    if (
+      fnameUpper.includes(cleanQuery) ||
+      fnameUpper.includes(queryNoSlash) ||
+      fnameUpper.includes(queryHyphen) ||
+      fnameUpper.includes(querySlash)
+    ) {
+      console.log(`[Google Drive Filter] Berkas "${file.name}" cocok berdasarkan nama file.`);
+      matchedFiles.push(file);
+      continue;
+    }
+
+    // 2. Download content & inspect with isValueMatchingOdp
+    try {
+      console.log(`[Google Drive Filter] Mengunduh & mengecek konten berkas: "${file.name}" (ID: ${file.id})...`);
+      const mediaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+
+      if (mediaRes.ok) {
+        const kmlContent = await mediaRes.text();
+        const isMatch = isValueMatchingOdp(kmlContent, cleanQuery);
+        if (isMatch) {
+          console.log(`[Google Drive Filter] OK! Kata kunci "${cleanQuery}" DITEMUKAN di dalam isi berkas "${file.name}".`);
+          matchedFiles.push(file);
+        } else {
+          console.log(`[Google Drive Filter] Kata kunci "${cleanQuery}" TIDAK ditemukan di berkas "${file.name}". Dilewati.`);
+        }
+      } else {
+        console.warn(`[Google Drive Filter] Gagal mengunduh media berkas ${file.name}, status: ${mediaRes.status}`);
+      }
+    } catch (err) {
+      console.error(`[Google Drive Filter Error] Gagal membaca isi KML ${file.name}:`, err);
+    }
+  }
+
+  console.log(`[Google Drive Filter] Selesai. Menemukan ${matchedFiles.length} dari ${kmlFiles.length} berkas KML yang benar-benar relevan.`);
+  return matchedFiles;
+}
+
 // API Route for hierarchical, safe KML file search on Google Drive
 app.post("/api/drive/search-kml", async (req: express.Request, res: express.Response) => {
   try {
@@ -531,11 +757,81 @@ app.post("/api/drive/search-kml", async (req: express.Request, res: express.Resp
       return res.status(410).json({ error: "TOKEN_EXPIRED", message: "Google Drive token telah kedaluwarsa" });
     }
 
+    const alproCode = extractAlproCode(searchName, site, sto);
     console.log(`[Google Drive Search] ========================================`);
-    console.log(`[Google Drive Search] Memulai pencarian bertahap untuk segment: "${segment}", searchName: "${searchName}", sto: "${sto}", site: "${site}"`);
+    console.log(`[Google Drive Search] Memulai hierarchical search. Segment: "${segment}", searchName: "${searchName}", sto: "${sto}", site: "${site}", alproCode: "${alproCode}"`);
 
-    const isDistribusi = segment && (segment.toUpperCase().includes("DISTRIBUSI") || segment.toUpperCase() === "ODP");
-    const isSurge = segment && segment.toUpperCase().includes("SURGE");
+    const segUpper = (segment || "").toString().toUpperCase();
+    const isDistribusi = segUpper.includes("DISTRIBUSI") || segUpper === "ODP";
+    const isSurge = segUpper.includes("SURGE");
+    const isFeeder = segUpper.includes("FEEDER") || segUpper.includes("BACKBONE") || (!isDistribusi && !isSurge);
+
+    const mFosisFolder = await findMFosisFolder(accessToken);
+    const mFosisFolderId = mFosisFolder ? mFosisFolder.id : null;
+
+    // 1. SURGE: Langsung cari data/file di folder SURGE
+    if (isSurge) {
+      console.log(`[Google Drive Search - SURGE] Mencari folder SURGE...`);
+      const surgeFolder = await findSegmentFolder(accessToken, mFosisFolderId, "SURGE");
+      if (surgeFolder) {
+        console.log(`[Google Drive Search - SURGE] Menemukan folder SURGE (ID: ${surgeFolder.id}). Mencari KML HANYA di folder tersebut...`);
+        const surgeKmls = await findKmlsInFolder(accessToken, surgeFolder.id);
+        if (surgeKmls.length > 0) {
+          const filtered = await filterKmlsByContent(accessToken, surgeKmls, searchName || alproCode);
+          if (filtered.length > 0) {
+            console.log(`[Google Drive Search - SURGE] Berhasil menemukan ${filtered.length} berkas KML relevan.`);
+            return res.json({ files: filtered });
+          }
+        }
+      }
+      console.log(`[Google Drive Search - SURGE] Folder SURGE tidak ditemukan / kosong / tidak cocok query. Menjalankan fallback...`);
+    }
+
+    // 2. DISTRIBUSI:
+    // User input ODP-MNZ-FD/11 -> cari folder utama DISTRIBUSI -> cari subfolder MNZ-FD -> gunakan folder ID tersebut untuk mencari KML HANYA yang berisi data ODP-MNZ-FD/11
+    if (isDistribusi) {
+      console.log(`[Google Drive Search - DISTRIBUSI] Mencari folder utama DISTRIBUSI...`);
+      const distFolder = await findSegmentFolder(accessToken, mFosisFolderId, "DISTRIBUSI");
+      if (distFolder) {
+        console.log(`[Google Drive Search - DISTRIBUSI] Menemukan folder DISTRIBUSI (ID: ${distFolder.id}). Mencari subfolder ALPRO: "${alproCode}"...`);
+        const targetSubfolder = await findSubfolderByAlproCode(accessToken, distFolder.id, alproCode);
+        if (targetSubfolder) {
+          console.log(`[Google Drive Search - DISTRIBUSI] Menemukan subfolder target "${targetSubfolder.name}" (ID: ${targetSubfolder.id}). Mencari KML HANYA yang relevan di dalamnya...`);
+          const targetKmls = await findKmlsInFolder(accessToken, targetSubfolder.id);
+          if (targetKmls.length > 0) {
+            const filtered = await filterKmlsByContent(accessToken, targetKmls, searchName || alproCode);
+            if (filtered.length > 0) {
+              console.log(`[Google Drive Search - DISTRIBUSI] Berhasil menemukan ${filtered.length} berkas KML relevan.`);
+              return res.json({ files: filtered });
+            }
+          }
+        }
+      }
+      console.log(`[Google Drive Search - DISTRIBUSI] Folder/subfolder target tidak ditemukan / kosong / tidak ada KML yang cocok query. Menjalankan fallback pencarian...`);
+    }
+
+    // 3. FEEDER:
+    // Input ODC-MSP-FA -> FEEDER -> subfolder MSP-FA -> cari KML HANYA yang relevan di folder tersebut
+    if (isFeeder && !isDistribusi && !isSurge) {
+      console.log(`[Google Drive Search - FEEDER] Mencari folder utama FEEDER...`);
+      const feederFolder = await findSegmentFolder(accessToken, mFosisFolderId, "FEEDER");
+      if (feederFolder) {
+        console.log(`[Google Drive Search - FEEDER] Menemukan folder FEEDER (ID: ${feederFolder.id}). Mencari subfolder ALPRO: "${alproCode}"...`);
+        const targetSubfolder = await findSubfolderByAlproCode(accessToken, feederFolder.id, alproCode);
+        if (targetSubfolder) {
+          console.log(`[Google Drive Search - FEEDER] Menemukan subfolder target "${targetSubfolder.name}" (ID: ${targetSubfolder.id}). Mencari KML HANYA yang relevan di dalamnya...`);
+          const targetKmls = await findKmlsInFolder(accessToken, targetSubfolder.id);
+          if (targetKmls.length > 0) {
+            const filtered = await filterKmlsByContent(accessToken, targetKmls, searchName || alproCode);
+            if (filtered.length > 0) {
+              console.log(`[Google Drive Search - FEEDER] Berhasil menemukan ${filtered.length} berkas KML relevan.`);
+              return res.json({ files: filtered });
+            }
+          }
+        }
+      }
+      console.log(`[Google Drive Search - FEEDER] Folder/subfolder target tidak ditemukan / kosong / tidak ada KML yang cocok query. Menjalankan fallback pencarian...`);
+    }
 
     if (isSurge) {
       console.log(`[Google Drive Search - SURGE] Menjalankan pipeline khusus segmen SURGE...`);
@@ -604,6 +900,11 @@ app.post("/api/drive/search-kml", async (req: express.Request, res: express.Resp
             }
           }
         }
+      }
+
+      if (matchedFiles.length > 0) {
+        const filtered = await filterKmlsByContent(accessToken, matchedFiles, searchName || alproCode);
+        if (filtered.length > 0) matchedFiles = filtered;
       }
 
       if (matchedFiles.length === 0) {
@@ -929,6 +1230,11 @@ app.post("/api/drive/search-kml", async (req: express.Request, res: express.Resp
           const globalData: any = await globalRes.json();
           kmlFiles = (globalData.files || []).filter((f: any) => (f.name || "").toLowerCase().endsWith(".kml"));
         }
+      }
+
+      if (kmlFiles.length > 0) {
+        const filtered = await filterKmlsByContent(accessToken, kmlFiles, searchName || alproCode);
+        if (filtered.length > 0) kmlFiles = filtered;
       }
 
       // Final fallback: Hasilkan KML simulasi jika berkas KML asli tidak ditemukan di mana pun
