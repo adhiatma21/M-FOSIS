@@ -516,6 +516,7 @@ function getDistanceAlongPath(path: [number, number][], point: [number, number])
 function ChangeView({ center, zoom }: { center: [number, number]; zoom?: number }) {
   const map = useMap();
   useEffect(() => {
+    map.invalidateSize();
     if (zoom !== undefined) {
       if (zoom === 18) {
         map.flyTo(center, zoom, { animate: true, duration: 1.5 });
@@ -534,7 +535,9 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
   useEffect(() => {
     if (positions.length > 0) {
       const bounds = L.latLngBounds(positions);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+      map.invalidateSize();
+      map.fitBounds(bounds, { padding: isMobile ? [20, 20] : [50, 50] });
     }
   }, [positions, map]);
   return null;
@@ -3500,13 +3503,13 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
       </aside>
 
       {/* Main Content */}
-      <main className={`flex-1 p-4 md:p-8 transition-all duration-300 ease-in-out overflow-x-hidden ${isSidebarVisible ? 'ml-2 md:ml-64' : 'ml-2 md:ml-6'}`}>
+      <main className={`flex-1 px-3 sm:px-4 md:p-8 transition-all duration-300 ease-in-out overflow-x-hidden w-full max-w-full min-w-0 ${isSidebarVisible ? 'ml-0 md:ml-64' : 'ml-0 md:ml-6'}`}>
         {(!hideMainHeader && activeTab !== 'gamas' && activeTab !== 'validasi') && (
-          <header className="flex justify-end items-center mb-6 mt-14 md:mt-0 select-none">
+          <header className="flex justify-end items-center mb-6 mt-14 md:mt-0 select-none w-full">
             <button 
               onClick={exportToPDF} 
               disabled={isPdfExporting}
-              className="bg-white hover:bg-red-50 text-red-600 border border-red-600/80 hover:border-red-600 font-bold py-2.5 px-4 rounded-xl transition-all shadow-sm active:scale-95 flex items-center gap-2 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="bg-white hover:bg-red-50 text-red-600 border border-red-600/80 hover:border-red-600 font-bold py-2.5 px-4 rounded-xl transition-all shadow-sm active:scale-95 flex items-center gap-2 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0"
             >
               {isPdfExporting ? (
                 <>
@@ -3528,8 +3531,8 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
             <Route path="*" element={
               <>
                 {activeTab === 'ukur' && (
-            <motion.div key="ukur" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className={`lg:col-span-4 space-y-6 ${isMapFullscreen ? 'hidden' : ''}`}>
+            <motion.div key="ukur" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full">
+              <div className={`col-span-1 lg:col-span-4 space-y-6 w-full ${isMapFullscreen ? 'hidden' : ''}`}>
                 <section className="bg-white/90 backdrop-blur-sm p-4 sm:p-5 rounded-2xl shadow-sm border border-red-100/50">
                   <h3 className="text-md font-bold mb-4 flex items-center gap-2">
                     <Activity className="text-red-600" size={18} /> Cari Parameter Estimasi Titik Putus
@@ -3589,7 +3592,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                     </div>
 
                     {ukurSegment === 'Link SURGE' && (
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold uppercase text-neutral-400">OTB AWAL</label>
                           <select
@@ -3747,9 +3750,9 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                 </section>
               </div>
 
-              <div className={isMapFullscreen ? "lg:col-span-12 col-span-12 w-full" : "lg:col-span-8 col-span-12"}>
-                <section className={`bg-white/90 backdrop-blur-sm p-2 rounded-2xl shadow-sm border border-red-100/50 relative overflow-hidden transition-all duration-300 ${isMapFullscreen ? 'h-[80vh]' : 'h-[300px] md:h-[500px]'}`}>
-                  <MapContainer center={mapCenter} zoom={14} scrollWheelZoom={true}>
+              <div className={isMapFullscreen ? "col-span-1 lg:col-span-12 w-full" : "col-span-1 lg:col-span-8 w-full"}>
+                <section className={`bg-white/90 backdrop-blur-sm p-2 rounded-2xl shadow-sm border border-red-100/50 relative overflow-hidden transition-all duration-300 w-full ${isMapFullscreen ? 'h-[80vh]' : 'h-[320px] sm:h-[420px] md:h-[500px]'}`}>
+                  <MapContainer center={mapCenter} zoom={14} scrollWheelZoom={true} className="w-full h-full rounded-xl">
                     <ChangeView center={mapCenter} zoom={targetOdpPosition ? 18 : undefined} />
                     {cableRoute && (
                       <FitBounds 
@@ -3967,7 +3970,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                   </MapContainer>
 
                   {/* Dynamic and fully tailored Mini Map Legend at bottom right */}
-                  <div className="absolute bottom-5 right-5 z-[1000] bg-white/95 backdrop-blur-md p-3.5 rounded-2xl shadow-xl border border-neutral-200/90 text-xs max-w-[210px] pointer-events-auto">
+                  <div className="absolute bottom-3 right-3 sm:bottom-5 sm:right-5 z-[1000] bg-white/95 backdrop-blur-md p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl shadow-xl border border-neutral-200/90 text-[9px] sm:text-xs max-w-[175px] sm:max-w-[210px] pointer-events-auto">
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-100">
                       <p className="font-extrabold text-neutral-800 tracking-wider text-[10px] uppercase">LEGENDA ALPRO</p>
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -4023,7 +4026,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                         initial={{ opacity: 0, x: 100 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 100 }}
-                        className="absolute right-2 top-2 bottom-2 w-full max-w-[320px] md:max-w-[400px] bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-red-100 z-[1100] flex flex-col overflow-hidden"
+                        className="absolute inset-x-2 top-2 bottom-2 md:inset-x-auto md:right-2 md:top-2 md:bottom-2 w-auto md:w-full md:max-w-[400px] bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-red-100 z-[1100] flex flex-col overflow-hidden"
                       >
                         {/* Header */}
                         <div className="p-4 bg-red-50 border-b border-red-100/50 flex justify-between items-center shrink-0">
@@ -4101,11 +4104,11 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
           )}
 
           {activeTab === 'rute' && (
-            <motion.div key="rute" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans">
+            <motion.div key="rute" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans w-full">
               
               {/* Left Form: Search & Drive Sync Status */}
-              <div className={`lg:col-span-4 space-y-6 ${isRuteMapFullscreen ? 'hidden' : ''}`}>
-                <section className="bg-white/95 backdrop-blur-sm p-6 rounded-3xl shadow-sm border border-red-100/50">
+              <div className={`col-span-1 lg:col-span-4 space-y-6 w-full ${isRuteMapFullscreen ? 'hidden' : ''}`}>
+                <section className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-red-100/50 w-full">
                   <h3 className="text-sm font-black mb-4 uppercase tracking-wider text-neutral-700 flex items-center gap-2">
                     <Search className="text-red-600" size={18} /> Pencarian Rute Kabel
                   </h3>
@@ -4169,7 +4172,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                     </div>
 
                     {routeCableType === 'Link SURGE' && (
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold uppercase text-neutral-400">OTB AWAL</label>
                           <select
@@ -4370,7 +4373,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                 </section>
                 
                 {/* Wajib 3 Baris Info Detail Card */}
-                <section className="bg-white/95 backdrop-blur-sm p-6 rounded-3xl shadow-sm border border-red-100/50">
+                <section className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-red-100/50 w-full">
                   <h3 className="text-sm font-black mb-4 uppercase tracking-wider text-neutral-700">Detail Aset Terunduh</h3>
                   {selectedRouteData ? (
                     <div className="space-y-4">
@@ -4417,7 +4420,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                             <div className="space-y-2">
                               {selectedRouteData.splicePoints.map((pt: any, idx: number) => (
                                 <div key={pt.id || idx} className="flex justify-between items-start text-[10px] font-mono border-b border-dashed border-neutral-50 pb-1.5 last:border-0 last:pb-0">
-                                  <div className="font-bold text-neutral-700 truncate pr-2 max-w-[120px]">{pt.name}</div>
+                                  <div className="font-bold text-neutral-700 truncate pr-2 flex-1 min-w-0">{pt.name}</div>
                                   <div className="text-neutral-500 shrink-0 text-right">
                                     <span className="text-red-500 font-bold">Lat:</span> {parseFloat(pt.lat).toFixed(6)}<br />
                                     <span className="text-red-500 font-bold">Long:</span> {parseFloat(pt.long).toFixed(6)}
@@ -4441,9 +4444,9 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
               </div>
               
               {/* Right View: Realtime Map Container */}
-              <div className={isRuteMapFullscreen ? "lg:col-span-12 col-span-12 w-full" : "lg:col-span-8 col-span-12"}>
-                <section className={`bg-white p-2 rounded-[2.5rem] shadow-sm border border-neutral-200 relative overflow-hidden transition-all duration-300 ${isRuteMapFullscreen ? 'h-[80vh]' : 'h-[300px] md:h-[650px]'}`}>
-                  <MapContainer center={mapCenter} zoom={13} scrollWheelZoom={true} className="w-full h-full rounded-[2.3rem] overflow-hidden">
+              <div className={isRuteMapFullscreen ? "col-span-1 lg:col-span-12 w-full" : "col-span-1 lg:col-span-8 w-full"}>
+                <section className={`bg-white p-2 rounded-2xl sm:rounded-[2.5rem] shadow-sm border border-neutral-200 relative overflow-hidden transition-all duration-300 w-full ${isRuteMapFullscreen ? 'h-[80vh]' : 'h-[320px] sm:h-[480px] md:h-[650px]'}`}>
+                  <MapContainer center={mapCenter} zoom={13} scrollWheelZoom={true} className="w-full h-full rounded-xl sm:rounded-[2.3rem] overflow-hidden">
                     <ChangeView center={mapCenter} zoom={targetOdpPosition ? 18 : undefined} />
                     {analisaMapStyle === 'google_road' && (
                       <TileLayer
@@ -4593,7 +4596,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                   </MapContainer>
 
                   {/* Dynamic and fully tailored Mini Map Legend at bottom right */}
-                  <div className="absolute bottom-5 right-5 z-[1000] bg-white/95 backdrop-blur-md p-3.5 rounded-2xl shadow-xl border border-neutral-200/90 text-xs max-w-[210px] pointer-events-auto">
+                  <div className="absolute bottom-3 right-3 sm:bottom-5 sm:right-5 z-[1000] bg-white/95 backdrop-blur-md p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl shadow-xl border border-neutral-200/90 text-[9px] sm:text-xs max-w-[175px] sm:max-w-[210px] pointer-events-auto">
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-100">
                       <p className="font-extrabold text-neutral-800 tracking-wider text-[10px] uppercase">LEGENDA ALPRO</p>
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -4649,7 +4652,7 @@ Gunakan bullet points atau penomoran untuk memperjelas poin penting. Teks harus 
                         initial={{ opacity: 0, x: 100 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 100 }}
-                        className="absolute right-2 top-2 bottom-2 w-full max-w-[320px] md:max-w-[400px] bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-red-100 z-[1100] flex flex-col overflow-hidden"
+                        className="absolute inset-x-2 top-2 bottom-2 md:inset-x-auto md:right-2 md:top-2 md:bottom-2 w-auto md:w-full md:max-w-[400px] bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-red-100 z-[1100] flex flex-col overflow-hidden"
                       >
                         {/* Header */}
                         <div className="p-4 bg-red-50 border-b border-red-100/50 flex justify-between items-center shrink-0">
